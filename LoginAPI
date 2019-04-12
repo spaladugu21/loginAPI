@@ -1,0 +1,231 @@
+<?php
+ header('Content-Type: application/json');
+ $settings  = array(  
+                      'fullsb' =>  array( 'url' =>  'https://fullsb-rvision-prod.cs21.force.com' ,'orgid' => '00Dq0000000Br2G') ,
+                      'fullsb2' =>  array( 'url' => 'https://fullsb2-rvision-prod.cs95.force.com' ,'orgid' => '00D0x0000008mM6' ) ,
+                      'prod' =>  array( 'url' => 'https://rvision-prod.force.com/' ,'orgid' => '00D61000000YGeL' )
+		                  'demofullsb' =>  array( 'url' => 'https://rvision-prod.force.com/' ,'orgid' => '00D0v0000004aBS' )	 
+                    );
+
+
+  $post = array();
+  try{
+    $post =  json_decode( file_get_contents('php://input'),true);
+  }catch(Exception $e) {
+    
+    Response( 'Invalid Json Format' ,  false);
+
+  }
+
+  $data = array();
+
+  if(is_array($post))
+  {
+    foreach ($post as $key => $value) {
+     $data[strtolower($key)] = $value;
+    } 
+  }
+
+
+   
+
+
+  if( !isset($data['username'])   ||  $data['username'] == '' )
+  {
+    Response( 'Missing field : Username ' ,  false);
+
+  }
+
+
+  if( !isset($data['password'])   ||  $data['password'] == '' )
+  {
+    Response( 'Missing field : Password ' ,  false);
+
+  }
+
+ 
+
+  if( !isset($data['org'])   ||  $data['org'] == ''  ||  !in_array($data['org'],  array_keys($settings)) )
+  {
+    Response( 'Invalid Or Missing field : Org ' ,  false); 
+
+  }
+
+  //$res = login($data['username'] , $data['password'] ,  $settings[$data['org']]['url'] );
+
+
+  $res = LoginPartner( $data['username'] ,$data['password']  ,$settings[$data['org']]['url']  ,$settings[$data['org']]['orgid']  ) ;
+ 
+  if($res['status'] == true)
+  {
+
+      Response( '' ,  true,$res['access_token'] , $settings[$data['org']]['url'] );
+  }else
+  {
+      Response( 'Invalid user or password' ,  false);
+
+  }
+
+ 
+function LoginPartner( $username ,$password,$orgurl  ,$orgId  ) 
+  {
+  
+      $xml = '<?xml version="1.0" encoding="utf-8" ?>
+          <env:Envelope xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+                xmlns:env="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">            
+            <env:Header> 
+              <n1:CallOptions xmlns:n1="urn:partner.soap.sforce.com" env:mustUnderstand="0"> 
+                <n1:client></n1:client>
+                </n1:CallOptions> <n2:LoginScopeHeader env:mustUnderstand="0" xmlns:n2="urn:partner.soap.sforce.com"> 
+                 
+                <n2:organizationId>' . $orgId .  '</n2:organizationId> 
+              </n2:LoginScopeHeader> 
+            </env:Header> 
+            <env:Body> 
+              <n3:login xmlns:n3="urn:partner.soap.sforce.com"> 
+                <n3:username>' . $username .  '</n3:username>
+                <n3:password>' . $password .  '</n3:password> 
+              </n3:login> 
+            </env:Body>
+          </env:Envelope>';
+      $ch = curl_init();
+      curl_setopt($ch, CURLOPT_URL,urldecode($orgurl . '/services/Soap/u/31.0'));
+      //curl_setopt($ch, CURLOPT_FOLLOWLOCATION,true);
+      curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20);
+      curl_setopt ($ch, CURLOPT_SSL_VERIFYHOST, 0);
+      curl_setopt ($ch, CURLOPT_SSL_VERIFYPEER, 0); 
+      curl_setopt($ch, CURLOPT_POST, true);
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+      curl_setopt($ch, CURLOPT_HEADER, false);
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: text/xml','SOAPAction: login'));
+      curl_setopt($ch, CURLOPT_POSTFIELDS, $xml);
+       
+      $result = curl_exec($ch);
+     
+      $data = Parse($result);
+
+       
+      $response = array('success' =>  false);
+      if(isset($data['SESSIONID']))
+      {
+         return array('status' => true , 'access_token' => $data['SESSIONID']   );
+          
+      }else if(isset($data['SF:EXCEPTIONMESSAGE']))
+      {
+        
+        return array('status' => false , 'error' => $data['SF:EXCEPTIONMESSAGE']  );
+        
+      } 
+        
+
+      return array('status' => false , 'error' => 'Error ! please try latter or contact system admin'  );
+        
+     
+  }
+
+
+  function Parse($xml)
+  { 
+    $p = xml_parser_create();
+    xml_parse_into_struct($p, $xml, $vals, $index);
+    xml_parser_free($p);
+    $simplearray =   array(); 
+    foreach($vals as $var)
+    {
+      if( isset($var['tag']) && isset($var['value'])   )
+      $simplearray[$var['tag']]  = $var['value'];
+    }
+    return $simplearray;
+   
+  }
+
+/* depriciated 
+function login($user , $pass , $url )
+{
+
+     
+    //define the cookie file location, make sure cookie.txt has write permissions
+    //$cookiefile = "/your/path/to/cookie.txt";
+    $tmpHandle = tmpfile();
+    $metaDatas = stream_get_meta_data($tmpHandle);
+    $cookiefile  = $metaDatas['uri'];
+     
+
+    // Define the URL and the data you want to send
+    $loginUrl = $url. "/login";
+    $parseUrl = $url. "/Sessionid";  ;
+    $loginVars = array(
+        'grant_type' => 'password',
+        'username' => $user,
+        'password' => $pass,
+        'un' => $user,
+        'pw' => $pass
+    ); 
+
+    // Now we try to login at the page
+    $login = curl_init();
+ 
+    curl_setopt( $login, CURLOPT_URL, $loginUrl);
+    curl_setopt( $login, CURLOPT_POST, 1);
+    curl_setopt( $login, CURLOPT_POSTFIELDS, http_build_query( $loginVars )   );
+    curl_setopt( $login, CURLOPT_COOKIEJAR, $cookiefile);
+    curl_setopt($login, CURLOPT_HEADER, true); 
+    curl_setopt( $login, CURLOPT_COOKIEFILE, $cookiefile);
+    curl_setopt( $login, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt( $login, CURLOPT_SSL_VERIFYHOST, false);
+    curl_setopt( $login, CURLOPT_FOLLOWLOCATION, 1);
+    curl_setopt( $login, CURLOPT_HEADER, 1);
+    curl_setopt( $login, CURLOPT_RETURNTRANSFER, true);
+
+
+  
+   curl_setopt($login, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
+
+
+
+    $loginResp = curl_exec($login);
+    curl_close($login);
+
+
+
+
+    $res = array('status' => false );
+
+
+    if (strpos($loginResp, 'You do not have Javascript enabled. Javascript is required to use salesforce.com') !== false) {
+        $parse = curl_init();
+
+        curl_setopt( $parse, CURLOPT_URL, $parseUrl);
+        curl_setopt( $parse, CURLOPT_FOLLOWLOCATION, 1);
+        curl_setopt( $parse, CURLOPT_HEADER, false);
+        curl_setopt( $parse, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt( $parse, CURLOPT_COOKIEJAR, $cookiefile);
+        curl_setopt( $parse, CURLOPT_COOKIEFILE, $cookiefile);
+        curl_setopt( $parse, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt( $parse, CURLOPT_SSL_VERIFYHOST, false);
+        $parseResponse = curl_exec( $parse );
+        curl_close($parse);
+        $j = json_decode($parseResponse,true) ;
+        $res = array('status' => true , 'access_token' => $j['access_token'] );
+    } 
+ 
+    unlink($cookiefile);
+
+
+    return $res;
+ 
+
+}
+
+*/
+
+
+  function Response($error ,  $status  , $access_token = '' , $InstanceUrl = ''  )
+  {
+        $response =  array('error' => $error , 'status' =>  $status , 'access_token' =>$access_token ,'InstanceUrl' => $InstanceUrl  );
+        die(json_encode($response));
+   
+  }
+
+
+?>
